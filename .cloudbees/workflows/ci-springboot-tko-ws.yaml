@@ -1,0 +1,106 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: ci-springboot
+on:
+  push:
+    branches:
+      - "**"
+env:
+  APP_NAME: java-app-image
+  UNIQUE_PREFIX: acaternberg
+jobs:
+  build:
+    steps:
+      - uses: docker://alpine/git:latest
+        run: |
+          git config --global --add safe.directory /cloudbees/workspace
+      - uses: cloudbees-io/checkout@v1
+        name: checkout
+      - uses: docker://maven:3.9.5-eclipse-temurin-17-alpine
+        name: mvn
+        kind: build
+        shell: bash
+        run: mvn clean install
+      - uses: cloudbees-io/sonarqube-bundled-sast-scan-code@v1
+        name: Scan with SonarQube bundled action
+        env:
+          SONAR_SCANNER_OPTS: sonar.java.binaries=target/classes
+      - uses: tko-configure-aws-credentials
+        name: Login to AWS
+        id: aws-login
+      - uses: docker://public.ecr.aws/aws-cli/aws-cli
+        name: AWS CLI testing
+        shell: bash
+        run: |
+          set -x
+          aws sts get-caller-identity
+          aws s3 ls
+      - uses: cloudbees-io/configure-ecr-credentials@v1
+        name: Configure container registry
+      - uses: cloudbees-io/kaniko@v1
+        name: Build and publish container image
+        id: image-publish
+        with:
+          destination: ${{ steps.aws-login.outputs.aws-account-id
+            }}.dkr.ecr.us-east-1.amazonaws.com/${{ env.APP_NAME }}:${{
+            env.UNIQUE_PREFIX }}-${{ cloudbees.version }}
+      - uses: cloudbees-io/helm-package@v1
+        name: Package Helm chart
+        id: helmpkg
+        with:
+          chart: ./charts/myapp
+          destination: ./
+          version: 0.0.1
+          app-version: 0.0.1
+          verify: "false"
+          sign: "false"
+          sign-key: mykeyname
+          values: >
+            image:
+              repository:  ${{ steps.aws-login.outputs.aws-account-id }}.dkr.ecr.us-east-1.amazonaws.com/${{ env.APP_NAME }}
+              tag: ${{ steps.image-publish.outputs.tag }}
+      - uses: cloudbees-io/helm-push@v1
+        name: Publish Helm chart
+        id: helm-publish
+        with:
+          chart: ${{ steps.helmpkg.outputs.chart }}
+          remote: oci://${{ steps.aws-login.outputs.aws-account-id
+            }}.dkr.ecr.us-east-1.amazonaws.com
+    outputs:
+      chart-location: ${{ steps.helm-publish.outputs.chart }}
+      chart-version: ${{ steps.helm-publish.outputs.version }}
+  deploy:
+    environment: acaternberg-uac
+    steps:
+      - uses: tko-configure-aws-credentials
+        name: Login to AWS
+        id: aws-login
+      - uses: cloudbees-io/configure-eks-credentials@v1
+        with:
+          name: cloudbees-quickstart-cluster
+      - uses: cloudbees-io/configure-ecr-credentials@v1
+      - uses: cloudbees-io/helm-install@v1
+        name: Install helm chart
+        id: install-chart
+        with:
+          chart-location: ${{ needs.build.outputs.chart-location }}
+          version: ${{ needs.build.outputs.chart-version }}
+          release-name: ${{ env.UNIQUE_PREFIX }}-${{ env.APP_NAME }}
+          namespace: ${{ env.UNIQUE_PREFIX }}-${{ env.APP_NAME }}
+          values: |
+            ingress:
+              annotations:
+                external-dns.alpha.kubernetes.io/hostname: ${{ vars.HOSTNAME }}
+              hosts:
+                - host: "${{ vars.HOSTNAME }}"
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                - paths:
+                    - path: /
+                      pathType: Prefix
+      - uses: run-jenkins-tko-job
+        with:
+          job-name: hello-test
+    needs:
+      - build

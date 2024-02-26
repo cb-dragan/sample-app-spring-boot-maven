@@ -1,0 +1,24 @@
+replicaCount: 1
+image:
+  repository: caternberg/cb-saas-spring-boot
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+nameOverride: "spring-boot-demo"
+fullnameOverride: "spring-boot-demo"
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+service:
+  type: ClusterIP
+  port: 8080
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    kubernetes.io/tls-acme: "false"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
