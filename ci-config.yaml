@@ -3,7 +3,7 @@ build:
     podyaml: podTemplate-maven.yaml
     image: maven:3-amazoncorretto-17
     steps:
-      - "mvn version"
+      - "mvn -version"
       - "mvn clean install"
   kaniko:
     podyaml: podTemplate-maven.yaml
