@@ -1,10 +1,12 @@
-build:
+app : 'Hello World'
+ci:
+  podyaml: podTemplate-maven.yaml
+  https_proxy: https://yourproxy:3128
+  no_proxy: localhost,docker.io
   maven:
-    podyaml: podTemplate-maven.yaml
-    image: maven:3-amazoncorretto-17
     steps:
       - "mvn -version"
       - "mvn clean install"
   kaniko:
-    podyaml: podTemplate-maven.yaml
-    image: gcr.io/kaniko-project/executor:debug
+    registry: caternberg
+    application_image: spring-boot-demo
