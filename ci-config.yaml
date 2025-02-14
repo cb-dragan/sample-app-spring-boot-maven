@@ -8,5 +8,6 @@ ci:
       - "mvn -version"
       - "mvn clean install"
   kaniko:
-    registry: caternberg
+    #registry: caternberg
+    registry: krstoslovka
     application_image: spring-boot-demo
